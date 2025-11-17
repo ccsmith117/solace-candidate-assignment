@@ -1,6 +1,16 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useMemo } from "react";
+import {
+  useReactTable,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
+  flexRender,
+  createColumnHelper,
+  SortingState,
+  ColumnDef,
+} from "@tanstack/react-table";
 
 interface Advocate {
   firstName: string;
@@ -12,90 +22,111 @@ interface Advocate {
   phoneNumber: string;
 }
 
+const columnHelper = createColumnHelper<Advocate>();
+
 export default function Home() {
   const [advocates, setAdvocates] = useState<Advocate[]>([]);
-  const [filteredAdvocates, setFilteredAdvocates] = useState<Advocate[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [globalFilter, setGlobalFilter] = useState("");
+  const [sorting, setSorting] = useState<SortingState>([]);
 
   useEffect(() => {
     fetch("/api/advocates").then((response) => {
       response.json().then((jsonResponse) => {
         setAdvocates(jsonResponse.data);
-        setFilteredAdvocates(jsonResponse.data);
       });
     });
   }, []);
 
-  useEffect(() => {
-    if (debounceTimeout.current) {
-      clearTimeout(debounceTimeout.current);
-    }
-    
-    debounceTimeout.current = setTimeout(() => {
-      const filtered = filterAdvocates(advocates, searchTerm);
-      setFilteredAdvocates(filtered);
-    }, 500);
+  const columns = useMemo<ColumnDef<Advocate, any>[]>(
+    () => [
+      columnHelper.accessor("firstName", {
+        header: "First Name",
+        cell: (info) => info.getValue(),
+      }),
+      columnHelper.accessor("lastName", {
+        header: "Last Name",
+        cell: (info) => info.getValue(),
+      }),
+      columnHelper.accessor("city", {
+        header: "City",
+        cell: (info) => info.getValue(),
+      }),
+      columnHelper.accessor("degree", {
+        header: "Degree",
+        cell: (info) => info.getValue(),
+      }),
+      columnHelper.accessor("specialties", {
+        header: "Specialties",
+        cell: (info) => {
+          const specialties = info.getValue();
+          const uniqueKey = `${info.row.original.phoneNumber}-${info.row.original.lastName}`;
+          return (
+            <div className="flex flex-wrap gap-2">
+              {specialties.map((specialty: string, idx: number) => (
+                <span
+                  key={`${uniqueKey}-specialty-${idx}`}
+                  className="px-3 py-1 rounded-full text-sm whitespace-nowrap bg-[rgb(213,228,225)] text-[#1d443a]"
+                >
+                  {specialty}
+                </span>
+              ))}
+            </div>
+          );
+        },
+        enableSorting: false,
+        filterFn: (row, columnId, filterValue) => {
+          const specialties = row.getValue(columnId) as string[];
+          return specialties.some((specialty) =>
+            specialty.toLowerCase().includes(filterValue.toLowerCase())
+          );
+        },
+      }),
+      columnHelper.accessor("yearsOfExperience", {
+        header: "Years of Experience",
+        cell: (info) => info.getValue(),
+      }),
+      columnHelper.accessor("phoneNumber", {
+        header: "Phone Number",
+        cell: (info) => info.getValue(),
+        enableSorting: false,
+      }),
+    ],
+    []
+  );
 
-    return () => {
-      if (debounceTimeout.current) {
-        clearTimeout(debounceTimeout.current);
+  const table = useReactTable({
+    data: advocates,
+    columns,
+    state: {
+      globalFilter,
+      sorting,
+    },
+    onGlobalFilterChange: setGlobalFilter,
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    globalFilterFn: (row, columnId, filterValue) => {
+      const search = String(filterValue).toLowerCase();
+      const value = row.getValue(columnId);
+
+      if (Array.isArray(value)) {
+        return value.some((item) =>
+          String(item).toLowerCase().includes(search)
+        );
       }
-    };
-  }, [searchTerm, advocates]);
 
-  const filterAdvocates = (
-    advocatesList: Advocate[],
-    searchTerm: string
-  ): Advocate[] => {
-    console.log('filtering')
-    const search = searchTerm.trim().toLowerCase();
-
-    if (!search) {
-      return advocatesList;
-    }
-
-    const containsSearch = (value: string | number) => {
-      if (value == null) return false;
       return String(value).toLowerCase().includes(search);
-    };
-
-    return advocatesList.filter((advocate) => {
-      const matchesSpecialties =
-        advocate.specialties?.some((specialty) =>
-          specialty.toLowerCase().includes(search)
-        ) ?? false;
-
-      return (
-        containsSearch(advocate.firstName) ||
-        containsSearch(advocate.lastName) ||
-        containsSearch(advocate.city) ||
-        containsSearch(advocate.degree) ||
-        containsSearch(advocate.yearsOfExperience) ||
-        containsSearch(advocate.phoneNumber) ||
-        matchesSpecialties
-      );
-    });
-  };
+    },
+  });
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && searchTerm.length > 0) {
-      if (debounceTimeout.current) {
-        clearTimeout(debounceTimeout.current);
-        debounceTimeout.current = null;
-      }
-      const filtered = filterAdvocates(advocates, searchTerm);
-      setFilteredAdvocates(filtered);
-    }
+    setGlobalFilter(e.target.value);
   };
 
   const onReset = () => {
-    setSearchTerm("");
-    setFilteredAdvocates(advocates);
+    setGlobalFilter("");
+    setSorting([]);
   };
 
   return (
@@ -110,9 +141,8 @@ export default function Home() {
         <div className="flex gap-3">
           <input
             className="flex-1 border-2 border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:border-[#1d443a] transition-colors duration-200 ease-in-out"
-            value={searchTerm}
+            value={globalFilter ?? ""}
             onChange={onChange}
-            onKeyDown={onKeyDown}
             placeholder="Search by name, city, degree, specialties..."
           />
           <button 
@@ -124,7 +154,7 @@ export default function Home() {
         </div>
       </div>
       
-      {filteredAdvocates.length === 0 ? (
+      {table.getRowModel().rows.length === 0 ? (
         <div className="bg-white shadow-lg rounded-lg p-12 text-center">
           <div className="text-gray-400 mb-4">
             <svg className="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -141,43 +171,88 @@ export default function Home() {
           </button>
         </div>
       ) : (
-        <table className="w-full shadow-lg rounded-lg overflow-hidden border-collapse min-w-[768px] bg-[linear-gradient(rgba(233,240,238,0.35),rgb(233,240,238)_33%,rgb(233,240,238))]">
-          <thead className="bg-[#1d443a]">
-            <tr>
-              <th className="text-left p-4 font-bold border-b-2 border-gray-600 text-white w-[12%]">First Name</th>
-              <th className="text-left p-4 font-bold border-b-2 border-gray-600 text-white w-[12%]">Last Name</th>
-              <th className="text-left p-4 font-bold border-b-2 border-gray-600 text-white w-[10%]">City</th>
-              <th className="text-left p-4 font-bold border-b-2 border-gray-600 text-white w-[10%]">Degree</th>
-              <th className="text-left p-4 font-bold border-b-2 border-gray-600 text-white w-[26%]">Specialties</th>
-              <th className="text-left p-4 font-bold border-b-2 border-gray-600 text-white w-[15%]">Years of Experience</th>
-              <th className="text-left p-4 font-bold border-b-2 border-gray-600 text-white w-[15%]">Phone Number</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredAdvocates.map((advocate) => {
-              const uniqueKey = `${advocate.phoneNumber}-${advocate.lastName}`;
-              return (
-                <tr key={uniqueKey} className="border-b border-gray-200 hover:bg-white/50 transition-colors">
-                  <td className="text-left p-4 w-[12%]">{advocate.firstName}</td>
-                  <td className="text-left p-4 w-[12%]">{advocate.lastName}</td>
-                  <td className="text-left p-4 w-[10%]">{advocate.city}</td>
-                  <td className="text-left p-4 w-[10%]">{advocate.degree}</td>
-                  <td className="text-left p-4 w-[26%]">
-                    <div className="flex flex-wrap gap-2">
-                      {advocate.specialties.map((specialty, idx) => (
-                        <span key={`${uniqueKey}-specialty-${idx}`} className="px-3 py-1 rounded-full text-sm whitespace-nowrap bg-[rgb(213,228,225)] text-[#1d443a]">
-                          {specialty}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="text-left p-4 w-[15%]">{advocate.yearsOfExperience}</td>
-                  <td className="text-left p-4 w-[15%]">{advocate.phoneNumber}</td>
+        <div className="shadow-lg rounded-lg overflow-hidden">
+          <table className="w-full border-collapse min-w-[768px] bg-[linear-gradient(rgba(233,240,238,0.35),rgb(233,240,238)_33%,rgb(233,240,238))]">
+            <thead className="bg-[#1d443a]">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    const widthClass = 
+                      header.id === 'firstName' ? 'w-[12%]' : 
+                      header.id === 'lastName' ? 'w-[12%]' : 
+                      header.id === 'city' ? 'w-[10%]' : 
+                      header.id === 'degree' ? 'w-[10%]' : 
+                      header.id === 'specialties' ? 'w-[26%]' : 
+                      header.id === 'yearsOfExperience' ? 'w-[15%]' : 
+                      header.id === 'phoneNumber' ? 'w-[15%]' : 'w-auto';
+                    
+                    return (
+                    <th
+                      key={header.id}
+                      className={`text-left p-4 font-bold border-b-2 border-gray-600 text-white ${widthClass}`}
+                    >
+                      {header.isPlaceholder ? null : (
+                        <div
+                          className={
+                            header.column.getCanSort()
+                              ? "cursor-pointer select-none flex items-center gap-2"
+                              : ""
+                          }
+                          onClick={header.column.getToggleSortingHandler()}
+                        >
+                          {flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
+                          {header.column.getCanSort() && (
+                            <span className="text-xs">
+                              {{
+                                asc: "↑",
+                                desc: "↓",
+                              }[header.column.getIsSorted() as string] ?? "⇅"}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </th>
+                    );
+                  })}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              ))}
+            </thead>
+            <tbody>
+              {table.getRowModel().rows.map((row) => (
+                <tr
+                  key={row.id}
+                  className="border-b border-gray-200 hover:bg-white/50 transition-colors"
+                >
+                  {row.getVisibleCells().map((cell) => {
+                    const widthClass = 
+                      cell.column.id === 'firstName' ? 'w-[12%]' : 
+                      cell.column.id === 'lastName' ? 'w-[12%]' : 
+                      cell.column.id === 'city' ? 'w-[10%]' : 
+                      cell.column.id === 'degree' ? 'w-[10%]' : 
+                      cell.column.id === 'specialties' ? 'w-[26%]' : 
+                      cell.column.id === 'yearsOfExperience' ? 'w-[15%]' : 
+                      cell.column.id === 'phoneNumber' ? 'w-[15%]' : 'w-auto';
+                    
+                    return (
+                    <td
+                      key={cell.id}
+                      className={`text-left p-4 ${widthClass}`}
+                    >
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
+                    </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </main>
   );
