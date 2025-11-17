@@ -1,8 +1,18 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Lato, DM_Serif_Display } from "next/font/google";
 import "./globals.css";
+import Header from "@/components/Header";
 
-const inter = Inter({ subsets: ["latin"] });
+const lato = Lato({ 
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  variable: "--font-lato"
+});
+const dmSerifDisplay = DM_Serif_Display({ 
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-heading"
+});
 
 export const metadata: Metadata = {
   title: "Solace Candidate Assignment",
@@ -16,7 +26,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body className={`${lato.variable} ${dmSerifDisplay.variable} font-sans`}>
+        <Header />
+        {children}
+      </body>
     </html>
   );
 }
